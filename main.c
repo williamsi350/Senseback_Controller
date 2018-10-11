@@ -25,7 +25,7 @@
 static volatile bool esb_xfer_done;
 static unsigned char rx_msg;
 static unsigned char* uartrx;
-static unsigned int bytecount = 0;
+//static unsigned int bytecount = 0;
 static uint32_t errcode, payload_w_ptr = 0;
 static volatile int rxpacketid = -5, uart_state = 0, tx_fail_count = 0;
 static volatile int tx_fail_flag = 0, tx_burst_flag = 0, tx_success_flag = 0, readpackets_flag = 0, uart_flag = 0;
@@ -71,7 +71,7 @@ void timer_event_handler(nrf_timer_event_t event_type, void* p_context)
 //ESB event handler - checking to see packet has been sent successfully
 void nrf_esb_event_handler(nrf_esb_evt_t const * p_event)
 {
-	int i;
+//	int i;
     switch (p_event->evt_id)
     {
 				case NRF_ESB_EVENT_RX_RECEIVED: {
