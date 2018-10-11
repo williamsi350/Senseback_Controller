@@ -151,6 +151,18 @@ void uart_event_handler(app_uart_evt_t * p_event)
 	}
 }
 
+void uart_send(const unsigned char* s) //Can't output \x00 as that is equivalent to '\0'
+{
+	while (*s != '\0') 	app_uart_put(*s++);
+	return;
+}
+
+void reset_flags()
+{
+	tx_success_flag = 0;
+	readpackets_flag = 0;
+	tx_fail_flag = 0;
+}
 
 
 int main(void)
@@ -158,6 +170,8 @@ int main(void)
 		uint32_t time_ms = 100; //Timer interval (query rate during recording)
 		uint32_t time_ticks;
 		int8_t tmp;
+		unsigned char text[16];
+		int link_alive =0;
 		int i;
 		//Can use LED command to indicate state of device
 		LEDS_CONFIGURE(LEDS_MASK);
@@ -201,30 +215,23 @@ int main(void)
 		for (i=0;i<252;i++) {
 			tx_payload.data[i] = 0;
 		}
+
+
+while(true)
+{
 	while (true) {
 		rxpacketid = -5;
 		while (true) { //Verify connection loop
 			errcode = nrf_esb_write_payload(&dummy_payload); //Send reset payload to RX
-			while ((tx_fail_flag == 0) && (readpackets_flag == 0) && (tx_success_flag == 0)){};
+			while ((tx_fail_flag == 0) && (readpackets_flag == 0) && (tx_success_flag == 0)){}; //wait
+			reset_flags();
 			if (tx_fail_flag == 1) {
-				tx_success_flag = 0;
-				readpackets_flag = 0;
-				tx_fail_flag = 0;
-				app_uart_put(0x12);
-				app_uart_put(0x3B);
-				app_uart_put(0x00);
-				app_uart_put(0x7F);
+				uart_send("\xB0\x07\x01");
 				nrf_delay_ms(2000);
 			}
 			else {
-				tx_success_flag = 0;
-				readpackets_flag = 0;
-				tx_fail_flag = 0;
 				nrf_esb_flush_rx();
-				app_uart_put(0x12);
-				app_uart_put(0x3B);
-				app_uart_put(0x00);
-				app_uart_put(0x71);
+				uart_send("\xB0\x07\x02");
 				nrf_delay_ms(100);
 				break;
 			}
@@ -233,24 +240,14 @@ int main(void)
 			errcode = nrf_esb_write_payload(&reset_payload); //Send reset payload to RX
 			while ((tx_fail_flag == 0) && (readpackets_flag == 0) && (tx_success_flag == 0)){};
 			if (tx_fail_flag == 1) {
-				tx_success_flag = 0;
-				readpackets_flag = 0;
-				tx_fail_flag = 0;
-				app_uart_put(0x12);
-				app_uart_put(0x3B);
-				app_uart_put(0x00);
-				app_uart_put(0x7F);
+				reset_flags();
+				uart_send("\xB0\x07\x03");
 				nrf_delay_ms(5000);
 			}
 			else {
-				tx_success_flag = 0;
-				tx_fail_flag = 0;
-				readpackets_flag = 0;
+				reset_flags();
 				nrf_esb_flush_rx();
-				app_uart_put(0x12);
-				app_uart_put(0x3B);
-				app_uart_put(0x00);
-				app_uart_put(0x72);
+				uart_send("\xB0\x07\x04");
 				rxpacketid = -1;
 				nrf_delay_ms(5000);
 				break;
@@ -260,139 +257,124 @@ int main(void)
 		nrf_drv_timer_enable(&TIMER_TX); //Start automatic RX query/heartbeat monitor.
 		while ((tx_fail_flag == 0) && (readpackets_flag == 0)){};
 		if (tx_fail_flag == 1) {
-			app_uart_put(0x12);
-			app_uart_put(0x3B);
-			app_uart_put(0x00);
-			app_uart_put(0x7F);
+			uart_send("\xB0\x07\x05");
 			nrf_drv_timer_disable(&TIMER_TX);
 		}
 		else {
 			nrf_esb_read_rx_payload(&rx_payload);
 			if (rx_payload.data[0] == 0) {
 				rxpacketid = 0;
-				app_uart_put(0x12);
-				app_uart_put(0x3B);
-				app_uart_put(0x00);
-				app_uart_put(0x7C);
+				uart_send("\xB0\x07\x06");
 				break;
 			}
 			else {
-				app_uart_put(0x12);
-				app_uart_put(0x3B);
-				app_uart_put(0x00);
-				app_uart_put(0x7F);
+				uart_send("\xB0\x07\x07");
 				nrf_drv_timer_disable(&TIMER_TX);
 				nrf_esb_flush_rx();
 			}
 			
 		}
 	}
-			
-	while (true) { //main loop
-		if (readpackets_flag == 1) {
-			while (nrf_esb_read_rx_payload(&rx_payload) == NRF_SUCCESS) {
-				
-				if (rx_payload.length >= 250) { //If payload max length seen more data may be available from PRX: immediately send dummy command to get more data
-					nrf_drv_timer_clear(&TIMER_TX);
-					errcode = nrf_esb_write_payload(&dummy_payload);
-					tx_payload.pid++;
-					app_uart_put(0xFE);
-					app_uart_put(0xED);
-					app_uart_put(0xBE);
-					app_uart_put(0xAD);
+		link_alive=1;
+		while (link_alive) { //main loop
+			if (readpackets_flag == 1) {
+				while (nrf_esb_read_rx_payload(&rx_payload) == NRF_SUCCESS) {
+
+					if (rx_payload.length >= 250) { //If payload max length seen more data may be available from PRX: immediately send dummy command to get more data
+						nrf_drv_timer_clear(&TIMER_TX);
+						errcode = nrf_esb_write_payload(&dummy_payload);
+						tx_payload.pid++;
+						uart_send("\xFE\xED\xBE\xAD");
+					}
+
+					if (((rxpacketid < 255) && ((int)rx_payload.data[0] != rxpacketid+1)) || ((rxpacketid == 255) && ((int)rx_payload.data[0] != 0))) {
+						tmp = (int8_t)(rxpacketid+1-(int)rx_payload.data[0]);
+						uart_send("\xBA\xDD\xF0\x0D");
+						app_uart_put(tmp);
+					}
+					rxpacketid = rx_payload.data[0];
+					if (rx_payload.length == 3 && rx_payload.data[1] == 0xF1 && rx_payload.data[2] == 0xF0) {
+						//If receiving FIFO_EMPTY payload from RX, do not print to UART (do nothing)
+						//app_uart_put(0xFF);
+					}
+					else {
+						uart_send("\xDA\x7A");
+						app_uart_put(rx_payload.length);
+						for (i=0;i<rx_payload.length;i++) {app_uart_put(rx_payload.data[i]);}
+						//for (i=0;i<2;i++)	{app_uart_put(newline_string[i]);}
+					}
 				}
-				
-				if (((rxpacketid < 255) && ((int)rx_payload.data[0] != rxpacketid+1)) || ((rxpacketid == 255) && ((int)rx_payload.data[0] != 0))) {
-					tmp = (int8_t)(rxpacketid+1-(int)rx_payload.data[0]);
-					app_uart_put(0xBA);
-					app_uart_put(0xDF);
-					app_uart_put(0x00);
-					app_uart_put(tmp);
-				}
-				rxpacketid = rx_payload.data[0];
-				if (rx_payload.length == 3 && rx_payload.data[1] == 0xF1 && rx_payload.data[2] == 0xF0) {
-					//If receiving FIFO_EMPTY payload from RX, do not print to UART (do nothing)
-					//app_uart_put(0xFF);
-				}
-				else {
-					app_uart_put(0xDA);
-					app_uart_put(0x7A);
-					app_uart_put(rx_payload.length);
-					for (i=0;i<rx_payload.length;i++) {app_uart_put(rx_payload.data[i]);}
-					//for (i=0;i<2;i++)	{app_uart_put(newline_string[i]);}
-				}
+				readpackets_flag = 0;
+
 			}
-			readpackets_flag = 0;
-		}
-		if (tx_fail_flag == 1) {
-			//nrf_drv_timer_disable(&TIMER_TX);
-			app_uart_put(0xDE);
-			app_uart_put(0xAD);
-			app_uart_put(0xBE);
-			app_uart_put(0xEF);
-			if (tx_fail_count >= 15) {
-				nrf_esb_flush_tx();
-				tx_fail_count = 0;
+			if (tx_fail_flag == 1) {
+				//nrf_drv_timer_disable(&TIMER_TX);
+				uart_send("\xDE\xAD\xBE\xEF");
+				if (tx_fail_count >= 15) {
+					nrf_esb_flush_tx();
+					tx_fail_count = 0;
+					//link_alive =0;
+				}
+				tx_fail_flag = 0;
 			}
-			tx_fail_flag = 0;
-		}
-		if (uart_flag == 1) {
-			while (app_uart_get(&rx_msg) == NRF_SUCCESS) {
-				switch (uart_state) {
-					case 0: {
-						switch (rx_msg) {
-							case 0x17: { //Command: start heartbeat timer for RX monitoring
-								nrf_drv_timer_enable(&TIMER_TX);
-								break;
+			if (uart_flag == 1) {
+				while (app_uart_get(&rx_msg) == NRF_SUCCESS) {
+					switch (uart_state) {
+						case 0: {
+							switch (rx_msg) {
+								case 0x17: { //Command: start heartbeat timer for RX monitoring
+									nrf_drv_timer_enable(&TIMER_TX);
+									break;
+								}
+								case 0x23: { //Command: stop heartbeat timer for RX monitoring
+									nrf_drv_timer_disable(&TIMER_TX);
+									break;
+								}
+								case 0x85: { //Command: start feeding data for a new packet
+									uart_state = 1;
+									break;
+								}
+								case 0x90: {
+									nrf_esb_pop_tx();
+									break;
+								}
+								case 0xE1: {
+									errcode = nrf_esb_flush_tx();
+									break;
+								}
+								default: {
+									break;
+								}
 							}
-							case 0x23: { //Command: stop heartbeat timer for RX monitoring
-								nrf_drv_timer_disable(&TIMER_TX);
-								break;
-							}
-							case 0x85: { //Command: start feeding data for a new packet
-								uart_state = 1;
-								break;
-							}
-							case 0x90: {
-								nrf_esb_pop_tx();
-								break;
-							}
-							case 0xE1: {
-								errcode = nrf_esb_flush_tx();
-								break;
-							}
-							default: {
-								break;
-							}
+							break;
 						}
-						break;
-					}
-					case 1: { //Receive packet length, determining number of bytes to place in packet
-						tx_payload.length = rx_msg;
-						uart_state = 2;
-						break;
-					}
-					case 2: {
-						tx_payload.data[payload_w_ptr] = rx_msg;
-						payload_w_ptr++;
-						if (payload_w_ptr == tx_payload.length) { //end of packet reached, send and return uart to default state
-							uart_state = 0;
-							nrf_drv_timer_clear(&TIMER_TX);
-							nrf_esb_write_payload(&tx_payload);
-							app_uart_put((uint8_t)payload_w_ptr);
-							payload_w_ptr = 0;
-							tx_payload.length = 0;
-							tx_payload.pid++;
-							
+						case 1: { //Receive packet length, determining number of bytes to place in packet
+							tx_payload.length = rx_msg;
+							uart_state = 2;
+							break;
 						}
-						break;
-					}
-					default: {
-						break;
+						case 2: {
+							tx_payload.data[payload_w_ptr] = rx_msg;
+							payload_w_ptr++;
+							if (payload_w_ptr == tx_payload.length) { //end of packet reached, send and return uart to default state
+								uart_state = 0;
+								nrf_drv_timer_clear(&TIMER_TX);
+								nrf_esb_write_payload(&tx_payload);
+								app_uart_put((uint8_t)payload_w_ptr);
+								payload_w_ptr = 0;
+								tx_payload.length = 0;
+								tx_payload.pid++;
+
+							}
+							break;
+						}
+						default: {
+							break;
+						}
 					}
 				}
+				uart_flag = 0;
 			}
-			uart_flag = 0;
 		}
 	}
 }
