@@ -20,8 +20,8 @@ byte13 = bin2dec(fliplr(dec2bin(  bitshift(uint8(bits_hp),0)   ,5)));
 byte8 = bitor( uint8(block)   ,8);
 
 
-invoke(handles.hrealterm, 'putchar', uint8(133)); %tell TX that theres a packet to send
-invoke(handles.hrealterm, 'putchar', uint8(14)); %Tell TX how many bytes are in the packet
+% invoke(handles.hrealterm, 'putchar', uint8(133)); %tell TX that theres a packet to send
+% invoke(handles.hrealterm, 'putchar', uint8(14)); %Tell TX how many bytes are in the packet
 
 write_reg(handles,0,byte0);
 write_reg(handles,1,byte1);
@@ -30,8 +30,8 @@ write_reg(handles,3,byte3);
 write_reg(handles,13,byte13);
 write_reg(handles,8,byte8);
 
-invoke(handles.hrealterm, 'putchar', uint8(0));
-invoke(handles.hrealterm, 'putchar', uint8(0));
+% invoke(handles.hrealterm, 'putchar', uint8(0));
+% invoke(handles.hrealterm, 'putchar', uint8(0));
 
 
 

@@ -18,7 +18,7 @@ end
 handles.hrealterm=actxserver('realterm.realtermintf');
 handles.hrealterm.baud=1000000; %3.75 Mbaud speed for the UART-SPI interface
 handles.hrealterm.flowcontrol=0; %no handshaking currently
-handles.hrealterm.Port='20'; %Make sure the COM port number (here 0) is the correct one for the USB UART device here; I can change it if needed, it depends on the computer.
+handles.hrealterm.Port='7'; %Make sure the COM port number (here 0) is the correct one for the USB UART device here; I can change it if needed, it depends on the computer.
 handles.hrealterm.PortOpen=1; %open the comm port
 
 

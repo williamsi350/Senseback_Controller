@@ -9,13 +9,13 @@ end
 register =9 + floor(stim_cfg/8);
 val = bitset(0,mod(stim_cfg,8)+1,'uint8');
 
-invoke(handles.hrealterm, 'putchar', uint8(133)); %tell TX that theres a packet to send
-invoke(handles.hrealterm, 'putchar', uint8(4)); %Tell TX how many bytes are in the packet
+% invoke(handles.hrealterm, 'putchar', uint8(133)); %tell TX that theres a packet to send
+% invoke(handles.hrealterm, 'putchar', uint8(4)); %Tell TX how many bytes are in the packet
 
 write_reg(handles,register,val);
 
-invoke(handles.hrealterm, 'putchar', uint8(0));
-invoke(handles.hrealterm, 'putchar', uint8(0));
+% invoke(handles.hrealterm, 'putchar', uint8(0));
+% invoke(handles.hrealterm, 'putchar', uint8(0));
 
 
 

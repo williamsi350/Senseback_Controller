@@ -5,6 +5,10 @@ if cfg_register>31 || cfg_register <0 || data <0 || data > 255 || cfg_byte <0 ||
     fprintf('cfg_register 0-31, data 0-255, cfg_byte 0-7');
     return;
 end
+
+invoke(handles.hrealterm, 'putchar', uint8(133)); %tell TX that theres a packet to send
+invoke(handles.hrealterm, 'putchar', uint8(6)); %Tell TX how many bytes are in the packet
+
 REG_WRITE_CMD = uint8(192);
 data_h_nibble = bitor(bitshift(uint8(data),-4),uint8(16) );
 data_l_nibble = bitand(uint8(15),uint8(data));
@@ -15,6 +19,8 @@ invoke(handles.hrealterm, 'putchar', bitor(bitshift(uint8(cfg_byte),5),data_h_ni
 invoke(handles.hrealterm, 'putchar', bitor(REG_WRITE_CMD, uint8(cfg_register)) );
 invoke(handles.hrealterm, 'putchar', bitor(bitshift(uint8(cfg_byte),5),data_l_nibble)   );
 
+invoke(handles.hrealterm, 'putchar', uint8(0));
+invoke(handles.hrealterm, 'putchar', uint8(0));
 
 end
 

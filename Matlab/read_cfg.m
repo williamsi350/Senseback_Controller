@@ -5,8 +5,17 @@ if cfg_register>31 || cfg_register <0 || req_id <0 || req_id > 31 || cfg_byte <0
     fprintf('cfg_register 0-31, req_id 0-31, cfg_byte 0-7');
     return;
 end
+
+invoke(handles.hrealterm, 'putchar', uint8(133)); %tell TX that theres a packet to send
+invoke(handles.hrealterm, 'putchar', uint8(4)); %Tell TX how many bytes are in the packet
+
 REG_READ_CFG = uint8(64);
 invoke(handles.hrealterm, 'putchar', bitor(REG_READ_CFG, uint8(cfg_register)) );
 invoke(handles.hrealterm, 'putchar', bitor(bitshift(uint8(cfg_byte),5),uint8(req_id)));
+
+
+invoke(handles.hrealterm, 'putchar', uint8(0));
+invoke(handles.hrealterm, 'putchar', uint8(0));
+
 end
 
