@@ -39,6 +39,7 @@ remduplicates = $(strip $(if $1,$(firstword $1) $(call remduplicates,$(filter-ou
 
 #source common to all targets
 C_SOURCE_FILES += \
+  $(PROJ_DIR)/main.c \
   $(SDK_PATH)/components/libraries/uart/app_uart_fifo.c \
   $(SDK_PATH)/components/drivers_nrf/delay/nrf_delay.c \
   $(SDK_PATH)/components/drivers_nrf/common/nrf_drv_common.c \
@@ -56,7 +57,7 @@ C_SOURCE_FILES += \
   $(SDK_PATH)/external/segger_rtt/SEGGER_RTT.c \
   $(SDK_PATH)/external/segger_rtt/SEGGER_RTT_printf.c \
   $(SDK_PATH)/components/toolchain/system_nrf52.c \
-  $(PROJ_DIR)/main.c \
+  
 
 #assembly files common to all targets
 ASM_SOURCE_FILES  += \
