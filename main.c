@@ -166,58 +166,63 @@ void reset_flags()
 }
 
 
+void init()
+{
+	uint32_t time_ms = 100; //Timer interval (query rate during recording)
+	uint32_t time_ticks;
+	
+
+	int i;
+	//Can use LED command to indicate state of device
+	LEDS_CONFIGURE(LEDS_MASK);
+	LEDS_OFF(LEDS_MASK);
+	uint32_t err_code;
+
+	err_code = nrf_drv_timer_init(&TIMER_TX, NULL, timer_event_handler);
+	APP_ERROR_CHECK(err_code);
+	time_ticks = nrf_drv_timer_ms_to_ticks(&TIMER_TX, time_ms);
+	nrf_drv_timer_extended_compare(&TIMER_TX, NRF_TIMER_CC_CHANNEL0, time_ticks, NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK, true);
+
+
+	//Initialize UART comms
+	const app_uart_comm_params_t comm_params =
+	{
+	  RX_PIN_NUMBER,
+	  TX_PIN_NUMBER,
+	  RTS_PIN_NUMBER,
+	  CTS_PIN_NUMBER,
+	  APP_UART_FLOW_CONTROL_DISABLED,
+	  false,
+	  UART_BAUDRATE_BAUDRATE_Baud1M
+	};
+
+	//Initialize UART FIFO
+	APP_UART_FIFO_INIT(&comm_params,
+					 UART_RX_BUF_SIZE,
+					 UART_TX_BUF_SIZE,
+					 uart_event_handler,
+					 APP_IRQ_PRIORITY_LOW,
+					 err_code);
+	APP_ERROR_CHECK(err_code);
+
+	//Initialize NRF_LOG (for debug messaging)
+	err_code = NRF_LOG_INIT();
+	APP_ERROR_CHECK(err_code);
+
+	clocks_start();
+	err_code = esb_init(); //Initialize radio
+
+	for (i=0;i<252;i++) tx_payload.data[i] = 0;
+
+}
+
 int main(void)
 {
-		uint32_t time_ms = 100; //Timer interval (query rate during recording)
-		uint32_t time_ticks;
-		int8_t tmp;
-		unsigned char text[16];
-		int link_alive =0;
-		int i;
-		//Can use LED command to indicate state of device
-		LEDS_CONFIGURE(LEDS_MASK);
-    LEDS_OFF(LEDS_MASK);
-		uint32_t err_code;
-	
-		err_code = nrf_drv_timer_init(&TIMER_TX, NULL, timer_event_handler);
-    APP_ERROR_CHECK(err_code);
-    time_ticks = nrf_drv_timer_ms_to_ticks(&TIMER_TX, time_ms);
-    nrf_drv_timer_extended_compare(&TIMER_TX, NRF_TIMER_CC_CHANNEL0, time_ticks, NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK, true);
-    
-		
-		//Initialize UART comms
-		const app_uart_comm_params_t comm_params =
-      {
-          RX_PIN_NUMBER,
-          TX_PIN_NUMBER,
-          RTS_PIN_NUMBER,
-          CTS_PIN_NUMBER,
-          APP_UART_FLOW_CONTROL_DISABLED,
-          false,
-          UART_BAUDRATE_BAUDRATE_Baud1M
-      };
-		
-		//Initialize UART FIFO
-    APP_UART_FIFO_INIT(&comm_params,
-                         UART_RX_BUF_SIZE,
-                         UART_TX_BUF_SIZE,
-                         uart_event_handler,
-                         APP_IRQ_PRIORITY_LOW,
-                         err_code);
-    APP_ERROR_CHECK(err_code);
-
-		//Initialize NRF_LOG (for debug messaging)
-    err_code = NRF_LOG_INIT();
-    APP_ERROR_CHECK(err_code);
-
-    clocks_start();
-    err_code = esb_init(); //Initialize radio
-    
-		for (i=0;i<252;i++) {
-			tx_payload.data[i] = 0;
-		}
-
-
+	unsigned char text[16];
+	int link_alive =0;
+	int8_t tmp;
+	int i;
+	init();
 while(true)
 {
 	while (true) {
