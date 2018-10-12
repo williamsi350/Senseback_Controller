@@ -24,7 +24,6 @@
 //Declare ESB data variables
 static volatile bool esb_xfer_done;
 static unsigned char rx_msg;
-static unsigned char* uartrx;
 //static unsigned int bytecount = 0;
 static uint32_t errcode, payload_w_ptr = 0;
 static volatile int rxpacketid = -5, uart_state = 0, tx_fail_count = 0;
@@ -33,10 +32,9 @@ nrf_esb_payload_t rx_payload;
 nrf_esb_payload_t tx_payload;
 nrf_esb_payload_t dummy_payload = NRF_ESB_CREATE_PAYLOAD(0, 0x61);
 nrf_esb_payload_t reset_payload = NRF_ESB_CREATE_PAYLOAD(0, 0x12, 0x35, 0x37);
-static char fail_string[17] = "Transfer Failed\r\n";
-static char success_string[21] = "Transfer Successful: ";
-static char received_string[19] = "Received Payload: ";
-static char newline_string[19] = "\r\n";
+
+enum VALID_STATES {DISCONNECTED, RESETTING, HEARTBEAT_CHECK, LINK_ACTIVE};
+
 
 
 //Instantiate timer (for use during recording to repeatedly query the device)
@@ -74,23 +72,17 @@ void nrf_esb_event_handler(nrf_esb_evt_t const * p_event)
 //	int i;
     switch (p_event->evt_id)
     {
-				case NRF_ESB_EVENT_RX_RECEIVED: {
-					readpackets_flag = 1;
-          break;
-				}
-        case NRF_ESB_EVENT_TX_SUCCESS: {
-					tx_success_flag = 1;
-          break;
-				}
-        case NRF_ESB_EVENT_TX_FAILED: {
-					tx_fail_flag = 1;
-					tx_fail_count++;
-					break;
-				}
-				default: {
-					break;
-				}
-        
+		case NRF_ESB_EVENT_RX_RECEIVED:
+			readpackets_flag = 1;
+			break;
+        case NRF_ESB_EVENT_TX_SUCCESS:
+        	tx_success_flag = 1;
+        	break;
+        case NRF_ESB_EVENT_TX_FAILED:
+			tx_fail_flag = 1;
+			tx_fail_count++;
+			break;
+		default: break;
     }
 }
 
@@ -152,7 +144,7 @@ void uart_event_handler(app_uart_evt_t * p_event)
 	}
 }
 
-void uart_send(const unsigned char* s) //Can't output \x00 as that is equivalent to '\0'
+void uart_send(const char* s) //Can't output \x00 as that is equivalent to '\0'
 {
 	while (*s != '\0') 	app_uart_put(*s++);
 	return;
@@ -216,75 +208,97 @@ void init()
 
 }
 
+void power_manage()
+{
+	__WFE();
+	__SEV();
+	__WFE();
+}
+
+
+
 int main(void)
 {
-	unsigned char text[16];
-	int link_alive =0;
 	int8_t tmp;
 	int i;
 	init();
-while(true)
-{
-	while (true) {
-		rxpacketid = -5;
-		while (true) { //Verify connection loop
+	uint8_t link_state = DISCONNECTED;
+	uint8_t failure_count=0;
+
+
+	while(true)
+	{
+
+		switch (link_state)
+		{
+		case DISCONNECTED:
+			rxpacketid = -5;
 			errcode = nrf_esb_write_payload(&dummy_payload); //Send reset payload to RX
-			while ((tx_fail_flag == 0) && (readpackets_flag == 0) && (tx_success_flag == 0)){}; //wait
-			reset_flags();
-			if (tx_fail_flag == 1) {
+			power_manage(); //Waits for an event - i.e a flag being set.
+
+			if (tx_fail_flag == 1)
+			{
 				uart_send("\xB0\x07\x01");
 				nrf_delay_ms(2000);
-			}
-			else {
-				nrf_esb_flush_rx();
-				uart_send("\xB0\x07\x02");
-				nrf_delay_ms(100);
+				tx_fail_flag =0;
 				break;
 			}
-		}
-		while (true) { //RX Reset Loop
+			nrf_delay_ms(100);
+
+			nrf_esb_flush_rx();
+			uart_send("\xB0\x07\x02");
+			reset_flags();
+			link_state++;
+
+		case RESETTING:
 			errcode = nrf_esb_write_payload(&reset_payload); //Send reset payload to RX
-			while ((tx_fail_flag == 0) && (readpackets_flag == 0) && (tx_success_flag == 0)){};
-			if (tx_fail_flag == 1) {
+			power_manage(); //Wait
+			if (tx_fail_flag == 1)
+			{
 				reset_flags();
 				uart_send("\xB0\x07\x03");
 				nrf_delay_ms(5000);
-			}
-			else {
-				reset_flags();
-				nrf_esb_flush_rx();
-				uart_send("\xB0\x07\x04");
-				rxpacketid = -1;
-				nrf_delay_ms(5000);
+				link_state--;
 				break;
 			}
-		}
-		
-		nrf_drv_timer_enable(&TIMER_TX); //Start automatic RX query/heartbeat monitor.
-		while ((tx_fail_flag == 0) && (readpackets_flag == 0)){};
-		if (tx_fail_flag == 1) {
-			uart_send("\xB0\x07\x05");
-			nrf_drv_timer_disable(&TIMER_TX);
-		}
-		else {
+
+			reset_flags();
+			nrf_esb_flush_rx();
+			uart_send("\xB0\x07\x04");
+			rxpacketid = -1;
+			link_state++;
+			nrf_delay_ms(5000); //Shorten this?
+
+		case HEARTBEAT_CHECK:
+			nrf_drv_timer_enable(&TIMER_TX); //Start automatic RX query/heartbeat monitor.
+			power_manage(); //Wait as a check that the heartbeat timer triggered packets are going out ok
+			if (tx_fail_flag == 1)
+			{
+				uart_send("\xB0\x07\x05");
+				nrf_drv_timer_disable(&TIMER_TX);
+				link_state--;
+				break;
+			}
+
 			nrf_esb_read_rx_payload(&rx_payload);
-			if (rx_payload.data[0] == 0) {
-				rxpacketid = 0;
-				uart_send("\xB0\x07\x06");
-				break;
-			}
-			else {
+			if (rx_payload.data[0] != 0)
+			{
 				uart_send("\xB0\x07\x07");
 				nrf_drv_timer_disable(&TIMER_TX);
 				nrf_esb_flush_rx();
+				link_state--;
+				break;
 			}
+
+			rxpacketid = 0;
+			uart_send("\xB0\x07\x06");
+			link_state++;
 			
-		}
-	}
-		link_alive=1;
-		while (link_alive) { //main loop
+		case LINK_ACTIVE:
 			if (readpackets_flag == 1) {
-				while (nrf_esb_read_rx_payload(&rx_payload) == NRF_SUCCESS) {
+				failure_count=0;
+				while (nrf_esb_read_rx_payload(&rx_payload) == NRF_SUCCESS)
+				{
 
 					if (rx_payload.length >= 250) { //If payload max length seen more data may be available from PRX: immediately send dummy command to get more data
 						nrf_drv_timer_clear(&TIMER_TX);
@@ -316,10 +330,12 @@ while(true)
 			if (tx_fail_flag == 1) {
 				//nrf_drv_timer_disable(&TIMER_TX);
 				uart_send("\xDE\xAD\xBE\xEF");
-				if (tx_fail_count >= 15) {
+				if (tx_fail_count >= 15)
+				{
 					nrf_esb_flush_tx();
 					tx_fail_count = 0;
-					//link_alive =0;
+					failure_count++;
+					if (failure_count > 10) link_state--;
 				}
 				tx_fail_flag = 0;
 			}
@@ -374,13 +390,13 @@ while(true)
 							}
 							break;
 						}
-						default: {
-							break;
-						}
+						default: break;
 					}
 				}
 				uart_flag = 0;
 			}
+
+		default : break;
 		}
 	}
 }
