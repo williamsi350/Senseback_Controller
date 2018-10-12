@@ -104,15 +104,16 @@ uint32_t esb_init( void )
 		
 		//Configuration params
     nrf_esb_config_t nrf_esb_config         = NRF_ESB_DEFAULT_CONFIG;
-		nrf_esb_config.protocol                 = NRF_ESB_PROTOCOL_ESB_DPL;
+	nrf_esb_config.protocol                 = NRF_ESB_PROTOCOL_ESB_DPL;
     nrf_esb_config.payload_length           = tx_payload.length; 
     nrf_esb_config.bitrate                  = NRF_ESB_BITRATE_2MBPS;
     nrf_esb_config.mode                     = NRF_ESB_MODE_PTX;			//TX mode
     nrf_esb_config.event_handler            = nrf_esb_event_handler;
-		nrf_esb_config.tx_mode                  = NRF_ESB_TXMODE_AUTO;	//automatic send after write
+	nrf_esb_config.tx_mode                  = NRF_ESB_TXMODE_AUTO;	//automatic send after write
     nrf_esb_config.selective_auto_ack       = false;
-		nrf_esb_config.retransmit_count					= 5;
-		//nrf_esb_config.retransmit_delay					= 500;
+	nrf_esb_config.retransmit_count					= 5;
+	nrf_esb_config.tx_output_power			= NRF_ESB_TX_POWER_4DBM;
+	//nrf_esb_config.retransmit_delay					= 500;
 
     err_code = nrf_esb_init(&nrf_esb_config);
     VERIFY_SUCCESS(err_code);
