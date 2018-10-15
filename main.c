@@ -77,6 +77,7 @@ void nrf_esb_event_handler(nrf_esb_evt_t const * p_event)
 			break;
         case NRF_ESB_EVENT_TX_SUCCESS:
         	tx_success_flag = 1;
+        	tx_fail_count=0;
         	break;
         case NRF_ESB_EVENT_TX_FAILED:
 			tx_fail_flag = 1;
@@ -223,7 +224,7 @@ int main(void)
 	int i;
 	init();
 	uint8_t link_state = DISCONNECTED;
-	uint8_t failure_count=0;
+	uint32_t err_code;
 
 
 	while(true)
@@ -233,70 +234,82 @@ int main(void)
 		{
 		case DISCONNECTED:
 			rxpacketid = -5;
+			tx_fail_count=0;
 			errcode = nrf_esb_write_payload(&dummy_payload); //Send reset payload to RX
 			power_manage(); //Waits for an event - i.e a flag being set.
 
-			if (tx_fail_flag == 1)
+			if (!tx_success_flag)
 			{
 				uart_send("\xB0\x07\x01");
 				nrf_delay_ms(2000);
 				tx_fail_flag =0;
 				break;
 			}
-			nrf_delay_ms(100);
+
 
 			nrf_esb_flush_rx();
 			uart_send("\xB0\x07\x02");
 			reset_flags();
-			link_state++;
+			link_state = RESETTING;
+			nrf_delay_ms(1000);
 
 		case RESETTING:
 			errcode = nrf_esb_write_payload(&reset_payload); //Send reset payload to RX
 			power_manage(); //Wait
-			if (tx_fail_flag == 1)
+			//while (!(tx_fail_flag||tx_success_flag||readpackets_flag));
+			if (tx_fail_flag)
 			{
 				reset_flags();
 				uart_send("\xB0\x07\x03");
-				nrf_delay_ms(5000);
-				link_state--;
+				nrf_delay_ms(500);
+				if (tx_fail_count > 10) link_state = DISCONNECTED;
+				nrf_esb_flush_rx();
+				nrf_esb_flush_tx();
 				break;
 			}
-
-			reset_flags();
 			nrf_esb_flush_rx();
+			nrf_esb_flush_tx();
+			reset_flags();
 			uart_send("\xB0\x07\x04");
 			rxpacketid = -1;
-			link_state++;
-			nrf_delay_ms(5000); //Shorten this?
+			link_state = HEARTBEAT_CHECK;
+			nrf_delay_ms(6000);
 
 		case HEARTBEAT_CHECK:
 			nrf_drv_timer_enable(&TIMER_TX); //Start automatic RX query/heartbeat monitor.
-			power_manage(); //Wait as a check that the heartbeat timer triggered packets are going out ok
-			if (tx_fail_flag == 1)
+			while (!(tx_fail_flag||tx_success_flag||readpackets_flag)); //Can't use WFE here as the timer wakes it
+			if (tx_fail_flag || !readpackets_flag)
 			{
 				uart_send("\xB0\x07\x05");
 				nrf_drv_timer_disable(&TIMER_TX);
-				link_state--;
+				if (tx_fail_count > 10) link_state= RESETTING;
+				reset_flags();
+				nrf_esb_flush_rx();
+				nrf_esb_flush_tx();
+				nrf_delay_ms(200);
 				break;
 			}
 
-			nrf_esb_read_rx_payload(&rx_payload);
-			if (rx_payload.data[0] != 0)
+			err_code = nrf_esb_read_rx_payload(&rx_payload);
+			if (rx_payload.data[0] || err_code)
 			{
-				uart_send("\xB0\x07\x07");
+				uart_send("\xB0\x07\x06");
+				app_uart_put(rx_payload.data[0]);
 				nrf_drv_timer_disable(&TIMER_TX);
+				link_state= RESETTING; //Need to reset the rx chip because link is ok, but chip state isn't
+				reset_flags();
 				nrf_esb_flush_rx();
-				link_state--;
+				nrf_esb_flush_tx();
+				nrf_delay_ms(500);
 				break;
 			}
 
 			rxpacketid = 0;
-			uart_send("\xB0\x07\x06");
-			link_state++;
+			uart_send("\xB0\x07\xED");
+			link_state = LINK_ACTIVE;
 			
 		case LINK_ACTIVE:
 			if (readpackets_flag == 1) {
-				failure_count=0;
 				while (nrf_esb_read_rx_payload(&rx_payload) == NRF_SUCCESS)
 				{
 
@@ -332,10 +345,11 @@ int main(void)
 				uart_send("\xDE\xAD\xBE\xEF");
 				if (tx_fail_count >= 15)
 				{
+					nrf_esb_flush_rx();
 					nrf_esb_flush_tx();
 					tx_fail_count = 0;
-					failure_count++;
-					if (failure_count > 10) link_state--;
+					link_state = HEARTBEAT_CHECK;
+
 				}
 				tx_fail_flag = 0;
 			}
@@ -364,9 +378,8 @@ int main(void)
 									errcode = nrf_esb_flush_tx();
 									break;
 								}
-								default: {
-									break;
-								}
+								default: break;
+
 							}
 							break;
 						}
@@ -395,7 +408,8 @@ int main(void)
 				}
 				uart_flag = 0;
 			}
-
+			power_manage();
+			break;
 		default : break;
 		}
 	}
