@@ -147,7 +147,10 @@ void uart_event_handler(app_uart_evt_t * p_event)
 
 void uart_send(const char* s) //Can't output \x00 as that is equivalent to '\0'
 {
+
+#ifdef DEBUG
 	while (*s != '\0') 	app_uart_put(*s++);
+#endif
 	return;
 }
 
@@ -233,6 +236,9 @@ int main(void)
 		switch (link_state)
 		{
 		case DISCONNECTED:
+
+			LEDS_ON(BSP_LED_0_MASK);
+			nrf_delay_ms(1000);
 			rxpacketid = -5;
 			tx_fail_count=0;
 			errcode = nrf_esb_write_payload(&dummy_payload); //Send reset payload to RX
@@ -240,8 +246,9 @@ int main(void)
 
 			if (!tx_success_flag)
 			{
+				LEDS_OFF(LEDS_MASK);
 				uart_send("\xB0\x07\x01");
-				nrf_delay_ms(2000);
+				nrf_delay_ms(1000);
 				tx_fail_flag =0;
 				break;
 			}
@@ -254,6 +261,7 @@ int main(void)
 			nrf_delay_ms(1000);
 
 		case RESETTING:
+			LEDS_ON(BSP_LED_0_MASK | BSP_LED_1_MASK);
 			errcode = nrf_esb_write_payload(&reset_payload); //Send reset payload to RX
 			power_manage(); //Wait
 			//while (!(tx_fail_flag||tx_success_flag||readpackets_flag));
@@ -262,6 +270,7 @@ int main(void)
 				reset_flags();
 				uart_send("\xB0\x07\x03");
 				nrf_delay_ms(500);
+				LEDS_ON(BSP_LED_0_MASK);
 				if (tx_fail_count > 10) link_state = DISCONNECTED;
 				nrf_esb_flush_rx();
 				nrf_esb_flush_tx();
@@ -276,10 +285,12 @@ int main(void)
 			nrf_delay_ms(6000);
 
 		case HEARTBEAT_CHECK:
+			LEDS_ON(BSP_LED_0_MASK | BSP_LED_1_MASK | BSP_LED_2_MASK);
 			nrf_drv_timer_enable(&TIMER_TX); //Start automatic RX query/heartbeat monitor.
 			while (!(tx_fail_flag||tx_success_flag||readpackets_flag)); //Can't use WFE here as the timer wakes it
 			if (tx_fail_flag || !readpackets_flag)
 			{
+				LEDS_ON(BSP_LED_0_MASK | BSP_LED_1_MASK);
 				uart_send("\xB0\x07\x05");
 				nrf_drv_timer_disable(&TIMER_TX);
 				if (tx_fail_count > 10) link_state= RESETTING;
@@ -294,7 +305,7 @@ int main(void)
 			if (rx_payload.data[0] || err_code)
 			{
 				uart_send("\xB0\x07\x06");
-				app_uart_put(rx_payload.data[0]);
+				//app_uart_put(rx_payload.data[0]);
 				nrf_drv_timer_disable(&TIMER_TX);
 				link_state= RESETTING; //Need to reset the rx chip because link is ok, but chip state isn't
 				reset_flags();
@@ -309,6 +320,7 @@ int main(void)
 			link_state = LINK_ACTIVE;
 			
 		case LINK_ACTIVE:
+			LEDS_ON(LEDS_MASK);
 			if (readpackets_flag == 1) {
 				while (nrf_esb_read_rx_payload(&rx_payload) == NRF_SUCCESS)
 				{
@@ -323,7 +335,9 @@ int main(void)
 					if (((rxpacketid < 255) && ((int)rx_payload.data[0] != rxpacketid+1)) || ((rxpacketid == 255) && ((int)rx_payload.data[0] != 0))) {
 						tmp = (int8_t)(rxpacketid+1-(int)rx_payload.data[0]);
 						uart_send("\xBA\xDD\xF0\x0D");
+#ifdef DEBUG
 						app_uart_put(tmp);
+#endif
 					}
 					rxpacketid = rx_payload.data[0];
 					if (rx_payload.length == 3 && rx_payload.data[1] == 0xF1 && rx_payload.data[2] == 0xF0) {
@@ -332,7 +346,9 @@ int main(void)
 					}
 					else {
 						uart_send("\xDA\x7A");
+#ifdef DEBUG
 						app_uart_put(rx_payload.length);
+#endif
 						for (i=0;i<rx_payload.length;i++) {app_uart_put(rx_payload.data[i]);}
 						//for (i=0;i<2;i++)	{app_uart_put(newline_string[i]);}
 					}
@@ -341,6 +357,7 @@ int main(void)
 
 			}
 			if (tx_fail_flag == 1) {
+				LEDS_OFF(LEDS_MASK);
 				//nrf_drv_timer_disable(&TIMER_TX);
 				uart_send("\xDE\xAD\xBE\xEF");
 				if (tx_fail_count >= 15)
@@ -395,7 +412,7 @@ int main(void)
 								uart_state = 0;
 								nrf_drv_timer_clear(&TIMER_TX);
 								nrf_esb_write_payload(&tx_payload);
-								app_uart_put((uint8_t)payload_w_ptr);
+								app_uart_put((uint8_t)payload_w_ptr); //Do i need to comment this out
 								payload_w_ptr = 0;
 								tx_payload.length = 0;
 								tx_payload.pid++;
